@@ -1,21 +1,36 @@
 <template>
   <div class="container">
-    <h1>Firebase Realtime Collaborative Drawing</h1>
+    <h1>FireSQL Collaborative Drawing</h1>
     <div>
       <canvas id="drawing-canvas" width="480" height="420"></canvas>
     </div>
-    <div id="colorholder"></div>
+    <div id="colorholder">
+      <button id="eraser">消しゴム</button>
+    </div>
   </div>
 </template>
 
 <script>
+import { FireSQL } from 'firesql.js'
+
+const createTable = `CREATE TABLE IF NOT EXISTS drawing (
+  coords VARCHAR(45) NOT NULL,
+  color VARCHAR(45) NULL,
+  PRIMARY KEY (coords))`
+
+function getURL(key, _default) {
+  const url = new URL(document.location).searchParams.get(key)
+  return url || _default
+}
+
 export default {
   mounted() {
+    const db = new FireSQL(getURL('url', 'http://localhost:8080'))
+    db.query(createTable)
     // Set up some globals
     const pixSize = 8
     let lastPoint = null
     let currentColor = '000'
-    console.log(currentColor)
     let mouseDown = 0
 
     // Create a reference to the pixel data for our drawing.
@@ -31,6 +46,9 @@ export default {
       return
     }
 
+    document
+      .getElementById('eraser')
+      .addEventListener('click', () => (currentColor = 'eraser'))
     // Setup each color palette & add it to the screen
     const colors = [
       'fff',
@@ -92,11 +110,19 @@ export default {
       const sy = y0 < y1 ? 1 : -1
       let err = dx - dy
       while (true) {
-        // write the pixel into Firebase, or if we are drawing white, remove the pixel
-        // pixelDataRef
-        //   .child(x0 + ':' + y0)
-        //   .set(currentColor === 'fff' ? null : currentColor)
-        console.log('drawing...', x0, y0, currentColor)
+        if (currentColor === 'eraser') {
+          clearPixel({ coords: `${x0}:${y0}` })
+          db.query(`DELETE FROM drawing WHERE coords = '${x0}:${y0}'`)
+        } else {
+          drawPixel({ coords: `${x0}:${y0}`, color: currentColor })
+          // write the pixel into Firebase, or if we are drawing white, remove the pixel
+          // pixelDataRef
+          //   .child(x0 + ':' + y0)
+          //   .set(currentColor === 'fff' ? null : currentColor)
+          db.query(
+            `INSERT INTO drawing (coords, color) VALUES ('${x0}:${y0}', '${currentColor}') ON DUPLICATE KEY UPDATE color = '${currentColor}'`
+          )
+        }
 
         if (x0 === x1 && y0 === y1) break
         const e2 = 2 * err
@@ -118,9 +144,9 @@ export default {
 
     // Add callbacks that are fired any time the pixel data changes and adjusts the canvas appropriately.
     // Note that child_added events will be fired for initial pixel data as well.
-    const drawPixel = function(snapshot) {
-      const coords = snapshot.key().split(':')
-      myContext.fillStyle = '#' + snapshot.val()
+    const drawPixel = function(row) {
+      const coords = row.coords.split(':')
+      myContext.fillStyle = '#' + row.color
       myContext.fillRect(
         parseInt(coords[0]) * pixSize,
         parseInt(coords[1]) * pixSize,
@@ -128,8 +154,8 @@ export default {
         pixSize
       )
     }
-    const clearPixel = function(snapshot) {
-      const coords = snapshot.key().split(':')
+    const clearPixel = function(row) {
+      const coords = row.coords.split(':')
       myContext.clearRect(
         parseInt(coords[0]) * pixSize,
         parseInt(coords[1]) * pixSize,
@@ -138,15 +164,34 @@ export default {
       )
     }
 
-    console.log(drawPixel, clearPixel)
     // pixelDataRef.on('child_added', drawPixel)
     // pixelDataRef.on('child_changed', drawPixel)
     // pixelDataRef.on('child_removed', clearPixel)
+    db.on('drawing', (rows, type) => {
+      if (type === 'WriteRowsEvent') {
+        for (const row of rows) {
+          drawPixel(row.values)
+        }
+      } else if (type === 'UpdateRowsEvent') {
+        for (const row of rows) {
+          drawPixel(row.after_values)
+        }
+      } else if (type === 'DeleteRowsEvent') {
+        for (const row of rows) {
+          clearPixel(row.values)
+        }
+      }
+    })
   }
 }
 </script>
 
 <style>
+.container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
 .title {
   font-family: 'Quicksand', 'Source Sans Pro', -apple-system, BlinkMacSystemFont,
     'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
@@ -182,10 +227,12 @@ body {
 }
 
 h1 {
+  margin: 64px 0 32px;
   font-size: 36px;
   font-weight: bold;
   font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
   color: #424547;
+  white-space: nowrap;
 }
 
 h3 {
@@ -216,8 +263,11 @@ em {
 
 /* Drawing */
 #colorholder {
+  display: flex;
+  justify-content: center;
+  align-items: center;
   width: 480px;
-  height: 30px;
+  height: 33px;
   border: 2px solid #424547;
   margin-top: 5px;
   margin-left: auto;
