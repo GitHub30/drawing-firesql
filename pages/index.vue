@@ -1,49 +1,152 @@
 <template>
   <div class="container">
+    <h1>Firebase Realtime Collaborative Drawing</h1>
     <div>
-      <logo />
-      <h1 class="title">
-        drawing-firesql
-      </h1>
-      <h2 class="subtitle">
-        My dazzling Nuxt.js project
-      </h2>
-      <div class="links">
-        <a href="https://nuxtjs.org/" target="_blank" class="button--green">
-          Documentation
-        </a>
-        <a
-          href="https://github.com/nuxt/nuxt.js"
-          target="_blank"
-          class="button--grey"
-        >
-          GitHub
-        </a>
-      </div>
+      <canvas id="drawing-canvas" width="480" height="420"></canvas>
     </div>
+    <div id="colorholder"></div>
   </div>
 </template>
 
 <script>
-import Logo from '~/components/Logo.vue'
-
 export default {
-  components: {
-    Logo
+  mounted() {
+    // Set up some globals
+    const pixSize = 8
+    let lastPoint = null
+    let currentColor = '000'
+    console.log(currentColor)
+    let mouseDown = 0
+
+    // Create a reference to the pixel data for our drawing.
+    // const pixelDataRef = new Firebase('https://INSTANCE.firebaseio.com/drawing')
+
+    // Set up our canvas
+    const myCanvas = document.getElementById('drawing-canvas')
+    const myContext = myCanvas.getContext ? myCanvas.getContext('2d') : null
+    if (myContext == null) {
+      alert(
+        'You must use a browser that supports HTML5 Canvas to run this demo.'
+      )
+      return
+    }
+
+    // Setup each color palette & add it to the screen
+    const colors = [
+      'fff',
+      '000',
+      'f00',
+      '0f0',
+      '00f',
+      '88f',
+      'f8d',
+      'f88',
+      'f05',
+      'f80',
+      '0f8',
+      'cf0',
+      '08f',
+      '408',
+      'ff8',
+      '8ff'
+    ]
+    for (const c in colors) {
+      // eslint-disable-next-line no-undef
+      const item = $('<div/>')
+        .css('background-color', '#' + colors[c])
+        .addClass('colorbox')
+      item.click(
+        (function() {
+          const col = colors[c]
+          return function() {
+            currentColor = col
+          }
+        })()
+      )
+      item.appendTo('#colorholder')
+    }
+
+    // Keep track of if the mouse is up or down
+    myCanvas.onmousedown = function() {
+      mouseDown = 1
+    }
+    myCanvas.onmouseout = myCanvas.onmouseup = function() {
+      mouseDown = 0
+      lastPoint = null
+    }
+
+    // Draw a line from the mouse's last position to its current position
+    const drawLineOnMouseMove = function(e) {
+      if (!mouseDown) return
+
+      // Bresenham's line algorithm. We use this to ensure smooth lines are drawn
+      // eslint-disable-next-line no-undef
+      const offset = $('canvas').offset()
+      const x1 = Math.floor((e.pageX - offset.left) / pixSize - 1)
+      const y1 = Math.floor((e.pageY - offset.top) / pixSize - 1)
+      let x0 = lastPoint == null ? x1 : lastPoint[0]
+      let y0 = lastPoint == null ? y1 : lastPoint[1]
+      const dx = Math.abs(x1 - x0)
+      const dy = Math.abs(y1 - y0)
+      const sx = x0 < x1 ? 1 : -1
+      const sy = y0 < y1 ? 1 : -1
+      let err = dx - dy
+      while (true) {
+        // write the pixel into Firebase, or if we are drawing white, remove the pixel
+        // pixelDataRef
+        //   .child(x0 + ':' + y0)
+        //   .set(currentColor === 'fff' ? null : currentColor)
+        console.log('drawing...', x0, y0, currentColor)
+
+        if (x0 === x1 && y0 === y1) break
+        const e2 = 2 * err
+        if (e2 > -dy) {
+          err = err - dy
+          x0 = x0 + sx
+        }
+        if (e2 < dx) {
+          err = err + dx
+          y0 = y0 + sy
+        }
+      }
+      lastPoint = [x1, y1]
+    }
+    // eslint-disable-next-line no-undef
+    $(myCanvas).mousemove(drawLineOnMouseMove)
+    // eslint-disable-next-line no-undef
+    $(myCanvas).mousedown(drawLineOnMouseMove)
+
+    // Add callbacks that are fired any time the pixel data changes and adjusts the canvas appropriately.
+    // Note that child_added events will be fired for initial pixel data as well.
+    const drawPixel = function(snapshot) {
+      const coords = snapshot.key().split(':')
+      myContext.fillStyle = '#' + snapshot.val()
+      myContext.fillRect(
+        parseInt(coords[0]) * pixSize,
+        parseInt(coords[1]) * pixSize,
+        pixSize,
+        pixSize
+      )
+    }
+    const clearPixel = function(snapshot) {
+      const coords = snapshot.key().split(':')
+      myContext.clearRect(
+        parseInt(coords[0]) * pixSize,
+        parseInt(coords[1]) * pixSize,
+        pixSize,
+        pixSize
+      )
+    }
+
+    console.log(drawPixel, clearPixel)
+    // pixelDataRef.on('child_added', drawPixel)
+    // pixelDataRef.on('child_changed', drawPixel)
+    // pixelDataRef.on('child_removed', clearPixel)
   }
 }
 </script>
 
 <style>
-.container {
-  margin: 0 auto;
-  min-height: 100vh;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  text-align: center;
-}
-
 .title {
   font-family: 'Quicksand', 'Source Sans Pro', -apple-system, BlinkMacSystemFont,
     'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
@@ -64,5 +167,72 @@ export default {
 
 .links {
   padding-top: 15px;
+}
+
+body {
+  margin-top: 10px;
+  margin-left: auto;
+  margin-right: auto;
+  width: 500px;
+  background-color: #f8f8f8;
+  font-size: 24px;
+  font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  color: #424547;
+  text-align: center;
+}
+
+h1 {
+  font-size: 36px;
+  font-weight: bold;
+  font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  color: #424547;
+}
+
+h3 {
+  font-size: 24px;
+  font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  color: #424547;
+}
+
+p {
+  font-size: 16px;
+}
+
+input {
+  font-size: 24px;
+}
+
+input[type='text'] {
+  color: #424547;
+  border: 1px solid #c2c2c2;
+  background-color: white;
+}
+
+em {
+  font-style: normal;
+  font-weight: bold;
+  color: black;
+}
+
+/* Drawing */
+#colorholder {
+  width: 480px;
+  height: 30px;
+  border: 2px solid #424547;
+  margin-top: 5px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+#drawing-canvas {
+  border: 3px solid #999;
+}
+
+.colorbox {
+  width: 22px;
+  height: 22px;
+  margin: 1px;
+  display: inline-block;
+  border: 3px solid black;
 }
 </style>
